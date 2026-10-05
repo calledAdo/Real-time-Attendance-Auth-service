@@ -71,7 +71,7 @@ public class AuthController {
     }
 
 
-    @GetMapping("/verify-email")
+    @PostMapping("/verify-email")
     public ResponseEntity<?> verifyEmail(@RequestBody VerifyEmailRequest request) {
         try {
             Role role = authService.verifyUserEmail(request.getEmail(), request.getToken());
