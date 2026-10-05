@@ -1,23 +1,40 @@
 package com.genius.config;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
+
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class EmailService {
 
-    @Autowired
-    private JavaMailSender mailSender;
+    private final RestClient restClient = RestClient.create("https://api.resend.com");
 
-    public void sendVerification(String toEmail, String code){
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(toEmail);
-        message.setSubject("Smart Attendance - Email Verification Code");
-        message.setText("Your 6-digit verification code for Smart Attendance is: " + code +
-                "\n\nPlease enter this code on the verification page to complete your registration.");
+    @Value("${resend.api.key}")
+    private String apiKey;
 
-        mailSender.send(message);
+    @Value("${resend.from}")
+    private String from;
+
+    public void sendVerification(String to, String code) {
+        try {
+            restClient.post()
+                    .uri("/emails")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "from", from,
+                            "to", List.of(to),
+                            "subject", "Your verification code",
+                            "text", "Your verification code is: " + code
+                    ))
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to send verification email: " + e.getMessage());
+        }
     }
 }
