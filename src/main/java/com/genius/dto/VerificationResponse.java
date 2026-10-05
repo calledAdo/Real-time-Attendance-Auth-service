@@ -1,5 +1,6 @@
 package com.genius.dto;
 
+import com.genius.model.Role;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,7 +10,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class LoginRequest {
-    private String password;
-    private String emailOrUsername;
+public class VerificationResponse {
+    private String message;
+    private Role role;
+    private String redirectUrl;
 }

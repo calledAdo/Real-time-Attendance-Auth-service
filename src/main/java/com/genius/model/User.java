@@ -1,17 +1,18 @@
 package com.genius.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
-
-import java.util.HashSet;
-import java.util.Set;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users", uniqueConstraints = {
+        @UniqueConstraint(columnNames = "email"),
+        @UniqueConstraint(columnNames = "username"),
+        @UniqueConstraint(columnNames = "matricNo")
+})
+@Builder
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -21,44 +22,29 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @NotBlank(message = "Full name is required")
     private String fullName;
 
-    @Column(unique = true, nullable = false)
+    @NotBlank(message = "Username is required")
     private String username;
 
-    @Column(unique = true, nullable = false)
-    private String email; // Enforced to end with .edu.ng for students
+    @NotBlank(message = "Email is required")
+    @Email(message = "Invalid email format")
+    private String email;
 
-    @Column(nullable = false)
+    @Column(name = "is_email_verified")
+    private boolean isEmailVerified = false;
+
+    private String emailVerificationToken;
+
+    @NotBlank(message = "Password is required")
     private String password;
 
-    // Student specific field
-    @Column(unique = true)
     private String matricNo;
 
-    // Role flag: False = Student, True = Lecturer
-    @Column(nullable = false)
-    private boolean isLecturer = false;
+    @NotNull(message = "Role is required")
+    private Role role;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "department_id")
-    private Department department;
-
-    // Courses taken by a Student
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(
-            name = "user_courses",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "course_id")
-    )
-    @ToString.Exclude
-    @EqualsAndHashCode.Exclude
-    private Set<Course> courses = new HashSet<>();
-
-    // Courses taught by a Lecturer
-    @ManyToMany(mappedBy = "lecturers", fetch = FetchType.EAGER)
-    @ToString.Exclude
-    @EqualsAndHashCode.Exclude
-    private Set<Course> teachingCourses = new HashSet<>();
+    @Column(columnDefinition = "TEXT")
+    private String facialEmbedding;
 }
