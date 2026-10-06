@@ -90,22 +90,19 @@ public class AuthController {
 
 
     @PostMapping("/onboard-face")
-    public ResponseEntity<?> onBoardFace(@RequestBody Map<String,String> payload){
+    public ResponseEntity<?> onBoardFace(@RequestBody Map<String,String> payload, Principal principal){
         try{
-            String username = payload.get("username");
             String facialEmbedding = payload.get("facialEmbedding");
+            String username = principal.getName(); // Securely from JWT
 
-            authService.saveFacialEmbedding(username,facialEmbedding);
+            authService.saveFacialEmbedding(username, facialEmbedding);
 
             return ResponseEntity.ok(Map.of(
-                    "success",true,
-                    "message", "Facial onboarding completed successfully! You can now access your dashboard."
+                    "success", true,
+                    "message", "Facial onboarding completed successfully!"
             ));
         }catch (Exception e){
-            return ResponseEntity.badRequest().body(Map.of(
-                    "success", false,
-                    "message", e.getMessage()
-            ));
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 

@@ -36,6 +36,10 @@ public class AttendanceSession {
     private LocalDateTime createdAt = LocalDateTime.now();
     private LocalDateTime expiresAt; // Optional timer
 
+    // Add these fields for location-based check-in geofencing
+    private Double latitude;
+    private Double longitude;
+
     public enum SessionStatus {
         ACTIVE, CLOSED
     }

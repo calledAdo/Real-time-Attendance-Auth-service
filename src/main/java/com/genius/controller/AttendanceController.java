@@ -2,7 +2,9 @@ package com.genius.controller;
 
 import com.genius.model.Attendance;
 import com.genius.model.AttendanceSession;
+import com.genius.model.User;
 import com.genius.service.AttendanceService;
+import com.genius.service.AuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,16 +20,19 @@ public class AttendanceController {
     @Autowired
     private AttendanceService attendanceService;
 
+    @Autowired
+    private AuthService authService;
+
     @PostMapping("/sessions")
-    public ResponseEntity<?> startSession(@RequestBody Map<String, Object> payload) {
+    public ResponseEntity<?> startSession(@RequestBody Map<String, Object> payload, Principal principal) {
         try {
             String courseCode = (String) payload.get("courseCode");
-            Long lecturerId = Long.valueOf(payload.get("lecturerId").toString());
             int durationMinutes = payload.containsKey("durationMinutes")
                     ? Integer.parseInt(payload.get("durationMinutes").toString())
                     : 15;
 
-            AttendanceSession session = attendanceService.startSession(courseCode, lecturerId, durationMinutes);
+            User lecturer = authService.getUserByEmailOrUsername(principal.getName());
+            AttendanceSession session = attendanceService.startSession(courseCode, lecturer.getId(), durationMinutes);
             return ResponseEntity.ok(session);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -91,7 +96,7 @@ public class AttendanceController {
             double longitude = payload.containsKey("longitude") ? Double.parseDouble(payload.get("longitude").toString()) : 0.0;
             String facialEmbedding = (String) payload.get("facialEmbedding");
 
-            // Delegate ID lookup and verification cleanly to the service layer
+            // Call the complete service method including code, location, and facial embedding
             Attendance attendance = attendanceService.verifyAndRecordAttendanceById(
                     sessionId, userEmail, code, latitude, longitude, facialEmbedding
             );
@@ -99,13 +104,12 @@ public class AttendanceController {
             return ResponseEntity.ok(Map.of(
                     "sessionId", sessionId,
                     "status", "PRESENT",
-                    "checkedInAt", attendance.getTimestamp().toString()
+                    "checkedInAt", attendance.getTimestamp().toString() // Matches getTimestamp() on Attendance entity
             ));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "code", "ATTENDANCE_FAILED",
-                    "message", e.getMessage(),
-                    "details", Map.of()
+                    "message", e.getMessage()
             ));
         }
     }

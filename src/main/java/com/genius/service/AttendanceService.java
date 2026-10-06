@@ -32,9 +32,10 @@ public class AttendanceService {
     private CourseRosterRepository rosterRepo;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final double EARTH_RADIUS_METERS = 6371000;
 
-    // 1. Lecturer Starts an Attendance Session
-    public AttendanceSession startSession(String courseCode, Long lecturerId, int durationMinutes) {
+    // 1. Lecturer Starts an Attendance Session (with Geofencing coordinates)
+    public AttendanceSession startSession(String courseCode, Long lecturerId, int durationMinutes, Double latitude, Double longitude) {
         String upperCode = courseCode.toUpperCase();
         Course course = courseRepo.findByCourseCode(upperCode)
                 .orElseThrow(() -> new RuntimeException("Course not found"));
@@ -52,8 +53,15 @@ public class AttendanceService {
         session.setStatus(AttendanceSession.SessionStatus.ACTIVE);
         session.setCreatedAt(LocalDateTime.now());
         session.setExpiresAt(LocalDateTime.now().plusMinutes(durationMinutes));
+        session.setLatitude(latitude);
+        session.setLongitude(longitude);
 
         return sessionRepo.save(session);
+    }
+
+    // Overload for legacy payloads lacking coordinates
+    public AttendanceSession startSession(String courseCode, Long lecturerId, int durationMinutes) {
+        return startSession(courseCode, lecturerId, durationMinutes, null, null);
     }
 
     // 2. Lecturer Closes a Session
@@ -69,15 +77,7 @@ public class AttendanceService {
         AttendanceSession session = sessionRepo.findBySessionCode(sessionCode.toUpperCase())
                 .orElseThrow(() -> new RuntimeException("Error: Invalid attendance session code."));
 
-        if (session.getStatus() != AttendanceSession.SessionStatus.ACTIVE) {
-            throw new RuntimeException("Error: This attendance session has been closed.");
-        }
-
-        if (session.getExpiresAt() != null && LocalDateTime.now().isAfter(session.getExpiresAt())) {
-            session.setStatus(AttendanceSession.SessionStatus.CLOSED);
-            sessionRepo.save(session);
-            throw new RuntimeException("Error: This attendance session has expired.");
-        }
+        validateSessionState(session);
 
         User user = userRepo.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -85,23 +85,25 @@ public class AttendanceService {
         return processAttendanceRecord(session, user, liveEmbeddingJson);
     }
 
-    // 4. Secure Session ID Check-in Method for the Frontend Contract
+    // 4. Secure Session ID Check-in Method with Geofence & Facial Verification
     public Attendance verifyAndRecordAttendanceById(Long sessionId, String userEmail, String code, double latitude, double longitude, String liveEmbeddingJson) {
         AttendanceSession session = sessionRepo.findById(sessionId)
                 .orElseThrow(() -> new RuntimeException("Error: Attendance session not found."));
 
-        if (session.getStatus() != AttendanceSession.SessionStatus.ACTIVE) {
-            throw new RuntimeException("Error: This attendance session has been closed.");
-        }
-
-        if (session.getExpiresAt() != null && LocalDateTime.now().isAfter(session.getExpiresAt())) {
-            session.setStatus(AttendanceSession.SessionStatus.CLOSED);
-            sessionRepo.save(session);
-            throw new RuntimeException("Error: This attendance session has expired.");
-        }
+        validateSessionState(session);
 
         if (code == null || !session.getSessionCode().equalsIgnoreCase(code.trim())) {
             throw new RuntimeException("Error: Invalid attendance session code.");
+        }
+
+        // Validate Geofence (100-meter radius check)
+        if (session.getLatitude() != null && session.getLongitude() != null) {
+            double distance = calculateDistance(session.getLatitude(), session.getLongitude(), latitude, longitude);
+            double allowedRadiusMeters = 100.0;
+
+            if (distance > allowedRadiusMeters) {
+                throw new RuntimeException("Geofence validation failed: You are " + Math.round(distance) + "m away from the lecture venue.");
+            }
         }
 
         // Fetch user securely via the JWT email principal
@@ -109,6 +111,23 @@ public class AttendanceService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         return processAttendanceRecord(session, user, liveEmbeddingJson);
+    }
+
+    // Helper to validate time window and closed status
+    private void validateSessionState(AttendanceSession session) {
+        if (session.getStatus() != AttendanceSession.SessionStatus.ACTIVE) {
+            throw new RuntimeException("Error: This attendance session has been closed.");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (session.getExpiresAt() != null && now.isAfter(session.getExpiresAt())) {
+            session.setStatus(AttendanceSession.SessionStatus.CLOSED);
+            sessionRepo.save(session);
+            throw new RuntimeException("Error: This attendance session has expired.");
+        }
+        if (now.isBefore(session.getCreatedAt())) {
+            throw new RuntimeException("Error: Attendance session has not started yet.");
+        }
     }
 
     // Shared internal helper to enforce roster, duplicate checks, and face verification
@@ -187,5 +206,19 @@ public class AttendanceService {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    // Haversine Distance Calculator
+    public double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return EARTH_RADIUS_METERS * c;
     }
 }
