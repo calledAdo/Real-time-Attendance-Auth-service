@@ -7,7 +7,7 @@ Spring Boot 4.1 / Java 17+ API for verified accounts, roster-assigned courses, a
 The `local` profile uses an in-memory H2 database and prints six-digit verification codes to the API process log. Data disappears when the process stops.
 
 ```bash
-SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
+SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
 The API listens on `http://localhost:2000`. Run the frontend with `VITE_API_PROXY_TARGET=http://127.0.0.1:2000 npm run dev`. The test roster at `src/test/resources/roster.csv` contains an assigned student and an absent student. The local profile and its verification-code logging must never be enabled on a public deployment.
@@ -33,4 +33,4 @@ Each session lasts five minutes. The server enforces a 100 m geofence around the
 
 ## Verification
 
-`./mvnw test` runs focused attendance service tests. The local HTTP smoke test covered registration, verification, login, CSV roster, course assignment, synthetic face enrollment, start, geofence failure, successful and duplicate check-in, closure, history and PDF authorization. Real camera capture, deployed email delivery, production PostgreSQL migration and public CORS still require verification after deployment.
+`mvn test` runs focused attendance service tests. The local HTTP smoke test covered registration, verification, login, CSV roster, course assignment, synthetic face enrollment, start, geofence failure, successful and duplicate check-in, closure, history and PDF authorization. Real camera capture, deployed email delivery, production PostgreSQL migration and public CORS still require verification after deployment.
