@@ -1,65 +1,89 @@
 package com.genius.controller;
 
-import com.genius.dto.BulkEnrollmentRequest;
-import com.genius.dto.CourseRequest;
+import com.genius.model.Course;
+import com.genius.model.CourseAccessRequest;
 import com.genius.service.CourseService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.security.Principal;
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/courses")
-@RequiredArgsConstructor
 public class CourseController {
 
-    private final CourseService courseService;
+    @Autowired
+    private CourseService courseService;
 
     @PostMapping
-    @PreAuthorize("hasRole('LECTURER')")
-    public ResponseEntity<?> createCourse(@RequestBody CourseRequest request, Principal principal) {
+    public ResponseEntity<?> createCourse(@RequestBody Map<String, Object> payload) {
         try {
-            courseService.createCourse(request, principal.getName());
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Course created successfully. You are set as the primary lecturer."
-            ));
-        } catch (Exception e) {
-            // Catches duplicates or validation errors with the custom message
-            int status = e.getMessage().contains("already exists") ? 409 : 400;
-            return ResponseEntity.status(status).body(Map.of(
-                    "success", false,
-                    "message", e.getMessage()
-            ));
-        }
-    }
+            String courseCode = (String) payload.get("courseCode");
+            String title = (String) payload.get("title");
+            String semester = (String) payload.get("semester");
+            Long lecturerId = Long.valueOf(payload.get("lecturerId").toString());
 
-    @PostMapping("/{courseCode}/assign-lecturer")
-    @PreAuthorize("hasRole('LECTURER')")
-    public ResponseEntity<?> assignSupportingLecturer(
-            @PathVariable String courseCode,
-            @RequestParam String lecturerEmail,
-            Principal principal) {
-        try {
-            courseService.assignSupportingLecturer(courseCode, lecturerEmail, principal.getName());
-            return ResponseEntity.ok(Map.of("success", true, "message", "Successfully added co-teacher."));
+            Course course = courseService.createCourse(courseCode, title, semester, lecturerId);
+            return ResponseEntity.ok(course);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    @PostMapping("/{courseCode}/bulk-enroll")
-    @PreAuthorize("hasRole('LECTURER')")
-    public ResponseEntity<?> bulkEnrollStudents(
+    @PostMapping("/{courseCode}/roster-upload")
+    public ResponseEntity<?> uploadRoster(
             @PathVariable String courseCode,
-            @RequestBody BulkEnrollmentRequest request,
-            Principal principal) {
+            @RequestParam("file") MultipartFile file) {
         try {
-            Map<String, Object> result = courseService.bulkEnrollStudents(courseCode, request.getMatricNumbers(), principal.getName());
-            return ResponseEntity.ok(result);
+            courseService.uploadRosterCsv(courseCode, file);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Roster staged successfully from CSV."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{courseCode}/confirm-roster")
+    public ResponseEntity<?> confirmRoster(@PathVariable String courseCode) {
+        try {
+            Course course = courseService.confirmRoster(courseCode);
+            return ResponseEntity.ok(course);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/student/{studentId}")
+    public ResponseEntity<?> getStudentCourses(@PathVariable Long studentId) {
+        try {
+            List<Course> courses = courseService.getStudentEnrolledCourses(studentId);
+            return ResponseEntity.ok(courses);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{courseCode}/request-access")
+    public ResponseEntity<?> requestAccess(
+            @PathVariable String courseCode,
+            @RequestParam Long studentId) {
+        try {
+            CourseAccessRequest req = courseService.requestCourseAccess(courseCode, studentId);
+            return ResponseEntity.ok(req);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/requests/{requestId}/action")
+    public ResponseEntity<?> handleRequest(
+            @PathVariable Long requestId,
+            @RequestParam boolean approve) {
+        try {
+            courseService.handleAccessRequest(requestId, approve);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Request processed successfully."));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }

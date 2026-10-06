@@ -1,122 +1,192 @@
 package com.genius.service;
 
-import com.genius.dto.CourseRequest;
 import com.genius.model.Course;
-import com.genius.model.Role;
-import com.genius.model.StudentCourseRegistration;
+import com.genius.model.CourseAccessRequest;
+import com.genius.model.CourseRoster;
 import com.genius.model.User;
+import com.genius.repo.CourseAccessRequestRepository;
 import com.genius.repo.CourseRepository;
-import com.genius.repo.StudentCourseRegistrationRepository;
+import com.genius.repo.CourseRosterRepository;
 import com.genius.repo.UserRepository;
-import lombok.RequiredArgsConstructor;
+import jakarta.transaction.Transactional;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 
 @Service
-@RequiredArgsConstructor
+@Transactional
 public class CourseService {
 
-    private final CourseRepository courseRepository;
-    private final UserRepository userRepository;
-    private final StudentCourseRegistrationRepository registrationRepository;
+    @Autowired
+    private CourseRepository courseRepo;
 
-    // 1. Create Course with normalization and duplicate checking
-    public Course createCourse(CourseRequest request, String lecturerEmail) {
-        User lecturer = userRepository.findByEmail(lecturerEmail)
-                .orElseThrow(() -> new RuntimeException("Lecturer not found"));
+    @Autowired
+    private CourseRosterRepository rosterRepo;
 
-        if (request.getCourseCode() == null || request.getCourseCode().trim().isEmpty()) {
-            throw new IllegalArgumentException("Course code cannot be empty.");
+    @Autowired
+    private CourseAccessRequestRepository accessRequestRepo;
+
+    @Autowired
+    private UserRepository userRepo;
+
+    // 1. Lecturer creates course in DRAFT state
+    public Course createCourse(String courseCode, String title, String semester, Long lecturerId) {
+        if (courseRepo.findByCourseCode(courseCode.toUpperCase()).isPresent()) {
+            throw new RuntimeException("Course code already exists!");
         }
 
-        // Normalize: Uppercase and remove all spaces (e.g., "CSC 301" -> "CSC301")
-        String normalizedCourseCode = request.getCourseCode().toUpperCase().replaceAll("\\s+", "");
+        Course course = new Course();
+        course.setCourseCode(courseCode.toUpperCase());
+        course.setTitle(title);
+        course.setSemester(semester);
+        course.setLecturerId(lecturerId);
+        course.setStatus(Course.CourseStatus.DRAFT);
 
-        // Check if course already exists
-        if (courseRepository.findByCourseCode(normalizedCourseCode).isPresent()) {
-            throw new RuntimeException("Course already exists! A primary lecturer has already registered this course. Please contact the primary lecturer or HOD to assign you to this course.");
-        }
-
-        Course course = Course.builder()
-                .courseCode(normalizedCourseCode)
-                .courseTitle(request.getCourseTitle())
-                .primaryLecturer(lecturer)
-                .build();
-
-        // Add creator as initial lecturer/co-teacher
-        course.getLecturers().add(lecturer);
-
-        return courseRepository.save(course);
+        return courseRepo.save(course);
     }
 
-    // 2. Assign Supporting Lecturer (Restricted to Primary Lecturer / HOD)
-    public void assignSupportingLecturer(String courseCode, String targetLecturerEmail, String currentLecturerEmail) {
-        User currentLecturer = userRepository.findByEmail(currentLecturerEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    // 2. Upload CSV Roster (Populates staging table without making fake accounts)
+    public void uploadRosterCsv(String courseCode, MultipartFile file) {
+        String upperCode = courseCode.toUpperCase();
+        Course course = courseRepo.findByCourseCode(upperCode)
+                .orElseThrow(() -> new RuntimeException("Course not found"));
 
-        String normalizedCode = courseCode.toUpperCase().replaceAll("\\s+", "");
-        Course course = courseRepository.findByCourseCode(normalizedCode)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + normalizedCode));
-
-        // Verify authorization
-        if (!course.getPrimaryLecturer().equals(currentLecturer)) {
-            throw new RuntimeException("Only the primary course coordinator/HOD can assign supporting lecturers.");
+        if (course.getStatus() == Course.CourseStatus.ACTIVE) {
+            throw new RuntimeException("Cannot modify roster for an active course. Switch back to draft or manage manually.");
         }
 
-        User supportLecturer = userRepository.findByEmail(targetLecturerEmail)
-                .orElseThrow(() -> new RuntimeException("Target lecturer not found"));
+        try (BufferedReader fileReader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8));
+             CSVParser csvParser = new CSVParser(fileReader, CSVFormat.DEFAULT.withFirstRecordAsHeader().withIgnoreHeaderCase().withTrim())) {
 
-        if (supportLecturer.getRole() != Role.LECTURER) {
-            throw new RuntimeException("User is not a lecturer.");
+            Iterable<CSVRecord> csvRecords = csvParser.getRecords();
+            List<CourseRoster> rosterList = new ArrayList<>();
+
+            for (CSVRecord csvRecord : csvRecords) {
+                String fullName = csvRecord.get("name");
+                String matricNo = csvRecord.get("matricNo");
+                String email = csvRecord.get("email");
+
+                // Check if already in staging to avoid duplicates
+                if (!rosterRepo.existsByCourseCodeAndMatricNo(upperCode, matricNo)) {
+                    CourseRoster roster = new CourseRoster();
+                    roster.setCourseCode(upperCode);
+                    roster.setFullName(fullName);
+                    roster.setMatricNo(matricNo);
+                    roster.setEmail(email);
+                    roster.setConfirmed(false); // Staging state
+                    rosterList.add(roster);
+                }
+            }
+            rosterRepo.saveAll(rosterList);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse CSV file: " + e.getMessage());
         }
-
-        course.getLecturers().add(supportLecturer);
-        courseRepository.save(course);
     }
 
-    // 3. Bulk Enroll Students via List Upload
-    public Map<String, Object> bulkEnrollStudents(String courseCode, List<String> matricNumbers, String lecturerEmail) {
-        User lecturer = userRepository.findByEmail(lecturerEmail)
-                .orElseThrow(() -> new RuntimeException("Lecturer not found"));
+    // 3. Lecturer confirms roster and flips course to ACTIVE
+    public Course confirmRoster(String courseCode) {
+        String upperCode = courseCode.toUpperCase();
+        Course course = courseRepo.findByCourseCode(upperCode)
+                .orElseThrow(() -> new RuntimeException("Course not found"));
 
-        String normalizedCode = courseCode.toUpperCase().replaceAll("\\s+", "");
-        Course course = courseRepository.findByCourseCode(normalizedCode)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + normalizedCode));
+        List<CourseRoster> stagingRows = rosterRepo.findByCourseCodeAndConfirmed(upperCode, false);
+        for (CourseRoster row : stagingRows) {
+            row.setConfirmed(true);
+        }
+        rosterRepo.saveAll(stagingRows);
 
-        // Verify that the logged-in lecturer teaches this course
-        if (!course.getLecturers().contains(lecturer)) {
-            throw new RuntimeException("You are not authorized to enroll students for this course.");
+        course.setStatus(Course.CourseStatus.ACTIVE);
+        return courseRepo.save(course);
+    }
+
+    // 4. Student Auto-Discovery (Fetches active courses matching student's matric number)
+    public List<Course> getStudentEnrolledCourses(Long studentId) {
+        User student = userRepo.findById(studentId)
+                .orElseThrow(() -> new RuntimeException("Student not found"));
+
+        if (student.getMatricNo() == null || student.getMatricNo().trim().isEmpty()) {
+            return new ArrayList<>();
         }
 
-        int enrolledCount = 0;
-        int skippedCount = 0;
+        // Find confirmed roster entries matching this student's matric number
+        List<CourseRoster> rosters = rosterRepo.findByMatricNoAndConfirmed(student.getMatricNo(), true);
+        List<Course> activeCourses = new ArrayList<>();
 
-        for (String matricNo : matricNumbers) {
-            User student = userRepository.findByMatricNo(matricNo.trim()).orElse(null);
-
-            // Skip invalid users or non-students
-            if (student == null || student.getRole() != Role.STUDENT) {
-                skippedCount++;
-                continue;
-            }
-
-            boolean exists = registrationRepository.existsByStudentAndCourse(student, course);
-            if (!exists) {
-                StudentCourseRegistration registration = StudentCourseRegistration.builder()
-                        .student(student)
-                        .course(course)
-                        .build();
-                registrationRepository.save(registration);
-                enrolledCount++;
-            }
+        for (CourseRoster roster : rosters) {
+            courseRepo.findByCourseCode(roster.getCourseCode())
+                    .filter(course -> course.getStatus() == Course.CourseStatus.ACTIVE)
+                    .ifPresent(activeCourses::add);
         }
 
-        return Map.of(
-                "message", "Bulk enrollment completed.",
-                "enrolledCount", enrolledCount,
-                "skippedOrNotFoundCount", skippedCount
-        );
+        return activeCourses;
+    }
+
+    // 5. Fallback: Request Access if missing from CSV
+    public CourseAccessRequest requestCourseAccess(String courseCode, Long studentId) {
+        String upperCode = courseCode.toUpperCase();
+        Course course = courseRepo.findByCourseCode(upperCode)
+                .orElseThrow(() -> new RuntimeException("Course not found"));
+
+        User student = userRepo.findById(studentId)
+                .orElseThrow(() -> new RuntimeException("Student not found"));
+
+        if (student.getMatricNo() == null || student.getMatricNo().trim().isEmpty()) {
+            throw new RuntimeException("Student must have a registered matriculation number to request access.");
+        }
+
+        if (rosterRepo.existsByCourseCodeAndMatricNo(upperCode, student.getMatricNo())) {
+            throw new RuntimeException("You are already on the course roster!");
+        }
+
+        // Check if a request already exists
+        Optional<CourseAccessRequest> existing = accessRequestRepo.findByCourseCodeAndStudentId(upperCode, studentId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        CourseAccessRequest request = new CourseAccessRequest();
+        request.setCourseCode(upperCode);
+        request.setStudentId(studentId);
+        request.setMatricNo(student.getMatricNo());
+        request.setStatus(CourseAccessRequest.RequestStatus.PENDING);
+
+        return accessRequestRepo.save(request);
+    }
+
+    // 6. Lecturer Approves/Rejects Access Request
+    public void handleAccessRequest(Long requestId, boolean approve) {
+        CourseAccessRequest request = accessRequestRepo.findById(requestId)
+                .orElseThrow(() -> new RuntimeException("Request not found"));
+
+        if (approve) {
+            User student = userRepo.findById(request.getStudentId())
+                    .orElseThrow(() -> new RuntimeException("Student not found"));
+
+            // Check if already on roster just in case
+            if (!rosterRepo.existsByCourseCodeAndMatricNo(request.getCourseCode(), student.getMatricNo())) {
+                CourseRoster roster = new CourseRoster();
+                roster.setCourseCode(request.getCourseCode());
+                roster.setFullName(student.getFullName());
+                roster.setMatricNo(student.getMatricNo());
+                roster.setEmail(student.getEmail());
+                roster.setConfirmed(true); // Automatically confirmed since lecturer approved it
+                rosterRepo.save(roster);
+            }
+
+            request.setStatus(CourseAccessRequest.RequestStatus.APPROVED);
+        } else {
+            request.setStatus(CourseAccessRequest.RequestStatus.REJECTED);
+        }
+        accessRequestRepo.save(request);
     }
 }

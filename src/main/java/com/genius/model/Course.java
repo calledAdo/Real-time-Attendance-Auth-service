@@ -1,42 +1,37 @@
 package com.genius.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
-import lombok.EqualsAndHashCode;
+import java.time.LocalDateTime;
 
-import java.util.HashSet;
-import java.util.Set;
-
-@Data
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
 @Entity
 @Table(name = "courses")
+@Data
 public class Course {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
-    private String courseCode; // e.g., CSC301
+    @Column(nullable = false, unique = true)
+    private String courseCode; // e.g. CSC301
 
     @Column(nullable = false)
-    private String courseTitle; // e.g., Data Structures and Algorithms
+    private String title;
 
-    @ManyToMany
-    @JoinTable(
-            name = "course_lecturers",
-            joinColumns = @JoinColumn(name = "course_id"),
-            inverseJoinColumns = @JoinColumn(name = "lecturer_id")
-    )
-    @ToString.Exclude
-    @EqualsAndHashCode.Exclude
-    @Builder.Default
-    private Set<User> lecturers = new HashSet<>();
+    @Column(nullable = false)
+    private String semester; // e.g., "First Semester 2026/2027"
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private CourseStatus status = CourseStatus.DRAFT;
+
+    @Column(nullable = false)
+    private Long lecturerId;
+
+    private LocalDateTime createdAt = LocalDateTime.now();
+
+    public enum CourseStatus {
+        DRAFT, ACTIVE
+    }
 }

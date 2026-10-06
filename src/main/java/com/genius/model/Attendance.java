@@ -29,6 +29,9 @@ public class Attendance {
     private String courseCode;
 
     @Column(nullable = false)
+    private Long sessionId; // Tied to the specific AttendanceSession
+
+    @Column(nullable = false)
     private LocalDate date;
 
     @Column(nullable = false)
