@@ -43,7 +43,6 @@ public class AttendanceService {
             throw new RuntimeException("Cannot start attendance for an inactive or draft course.");
         }
 
-        // Generate a 6-character session code
         String sessionCode = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
 
         AttendanceSession session = new AttendanceSession();
@@ -65,9 +64,8 @@ public class AttendanceService {
         return sessionRepo.save(session);
     }
 
-    // 3. Facial Verification & Attendance Marking (Session-aware)
-    public Attendance verifyAndRecordAttendance(String sessionCode, String username, String liveEmbeddingJson) {
-        // Validate Session
+    // 3. Legacy Facial Verification (Username-based)
+    public Attendance verifyAndRecordAttendanceLegacy(String sessionCode, String username, String liveEmbeddingJson) {
         AttendanceSession session = sessionRepo.findBySessionCode(sessionCode.toUpperCase())
                 .orElseThrow(() -> new RuntimeException("Error: Invalid attendance session code."));
 
@@ -81,10 +79,40 @@ public class AttendanceService {
             throw new RuntimeException("Error: This attendance session has expired.");
         }
 
-        // Validate User
         User user = userRepo.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        return processAttendanceRecord(session, user, liveEmbeddingJson);
+    }
+
+    // 4. Secure Session ID Check-in Method for the Frontend Contract
+    public Attendance verifyAndRecordAttendanceById(Long sessionId, String userEmail, String code, double latitude, double longitude, String liveEmbeddingJson) {
+        AttendanceSession session = sessionRepo.findById(sessionId)
+                .orElseThrow(() -> new RuntimeException("Error: Attendance session not found."));
+
+        if (session.getStatus() != AttendanceSession.SessionStatus.ACTIVE) {
+            throw new RuntimeException("Error: This attendance session has been closed.");
+        }
+
+        if (session.getExpiresAt() != null && LocalDateTime.now().isAfter(session.getExpiresAt())) {
+            session.setStatus(AttendanceSession.SessionStatus.CLOSED);
+            sessionRepo.save(session);
+            throw new RuntimeException("Error: This attendance session has expired.");
+        }
+
+        if (code == null || !session.getSessionCode().equalsIgnoreCase(code.trim())) {
+            throw new RuntimeException("Error: Invalid attendance session code.");
+        }
+
+        // Fetch user securely via the JWT email principal
+        User user = userRepo.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return processAttendanceRecord(session, user, liveEmbeddingJson);
+    }
+
+    // Shared internal helper to enforce roster, duplicate checks, and face verification
+    private Attendance processAttendanceRecord(AttendanceSession session, User user, String liveEmbeddingJson) {
         if (user.getRole() != Role.STUDENT) {
             throw new RuntimeException("Access denied: Facial verification is restricted to students.");
         }
@@ -97,25 +125,21 @@ public class AttendanceService {
             throw new RuntimeException("No facial embedding registered for this student.");
         }
 
-        // Verify Student is on the Confirmed Course Roster
         boolean isEnrolled = rosterRepo.existsByCourseCodeAndMatricNo(session.getCourseCode(), user.getMatricNo());
         if (!isEnrolled) {
             throw new RuntimeException("Error: You are not registered on the official roster for " + session.getCourseCode() + ".");
         }
 
-        // Check Duplicate Attendance for this Session
         boolean alreadyCheckedIn = attendanceRepo.existsBySessionIdAndMatricNo(session.getId(), user.getMatricNo());
         if (alreadyCheckedIn) {
             throw new RuntimeException("Attendance already marked for this session.");
         }
 
-        // Perform Cosine Similarity Facial Verification
         boolean isMatch = compareEmbeddings(user.getFacialEmbedding(), liveEmbeddingJson);
         if (!isMatch) {
             throw new RuntimeException("Face mismatch. Verification failed.");
         }
 
-        // Record Attendance
         Attendance attendance = new Attendance();
         attendance.setUser(user);
         attendance.setMatricNo(user.getMatricNo());
@@ -128,7 +152,7 @@ public class AttendanceService {
         return attendanceRepo.save(attendance);
     }
 
-    // 4. Fetch records for a session (Lecturer view)
+    // Fetch records for a session (Lecturer view)
     public List<Attendance> getSessionRecords(Long sessionId) {
         return attendanceRepo.findBySessionId(sessionId);
     }

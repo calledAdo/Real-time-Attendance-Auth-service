@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 
@@ -43,14 +44,15 @@ public class AttendanceController {
         }
     }
 
+    // Legacy legacy/staging endpoint if still needed
     @PostMapping("/verify-face")
-    public ResponseEntity<?> verifyAndCheckIn(@RequestBody Map<String, String> payload) {
+    public ResponseEntity<?> verifyAndCheckInLegacy(@RequestBody Map<String, String> payload) {
         try {
             String sessionCode = payload.get("sessionCode");
             String username = payload.get("username");
             String facialEmbedding = payload.get("facialEmbedding");
 
-            Attendance attendance = attendanceService.verifyAndRecordAttendance(sessionCode, username, facialEmbedding);
+            Attendance attendance = attendanceService.verifyAndRecordAttendanceLegacy(sessionCode, username, facialEmbedding);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -73,6 +75,38 @@ public class AttendanceController {
             return ResponseEntity.ok(records);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // Authoritative Frontend Check-In Endpoint matching contract
+    @PostMapping("/sessions/{sessionId}/check-ins")
+    public ResponseEntity<?> checkIn(
+            @PathVariable Long sessionId,
+            @RequestBody Map<String, Object> payload,
+            Principal principal) {
+        try {
+            String userEmail = principal.getName(); // Securely pulled from JWT principal token
+            String code = (String) payload.get("code");
+            double latitude = payload.containsKey("latitude") ? Double.parseDouble(payload.get("latitude").toString()) : 0.0;
+            double longitude = payload.containsKey("longitude") ? Double.parseDouble(payload.get("longitude").toString()) : 0.0;
+            String facialEmbedding = (String) payload.get("facialEmbedding");
+
+            // Delegate ID lookup and verification cleanly to the service layer
+            Attendance attendance = attendanceService.verifyAndRecordAttendanceById(
+                    sessionId, userEmail, code, latitude, longitude, facialEmbedding
+            );
+
+            return ResponseEntity.ok(Map.of(
+                    "sessionId", sessionId,
+                    "status", "PRESENT",
+                    "checkedInAt", attendance.getTimestamp().toString()
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "code", "ATTENDANCE_FAILED",
+                    "message", e.getMessage(),
+                    "details", Map.of()
+            ));
         }
     }
 }
