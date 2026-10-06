@@ -30,8 +30,10 @@ public class AuthService {
             throw new RuntimeException("Error: Email already in use.");
         }
         if(userRepo.existsByUsername(request.getUsername())){
-            throw new RuntimeException("Error: username already in use");
+            throw new RuntimeException("Error: Username already in use.");
         }
+
+        // Student Validation Logic
         if(request.getRole() == Role.STUDENT){
             if(!request.getEmail().endsWith("@student.oauife.edu.ng")){
                 throw new IllegalArgumentException("Student email must end with @student.oauife.edu.ng");
@@ -43,6 +45,16 @@ public class AuthService {
                 throw new RuntimeException("Error: Matric number already registered!");
             }
         }
+        // Lecturer Validation Logic
+        else if(request.getRole() == Role.LECTURER){
+            if(!request.getEmail().endsWith("@oauife.edu.ng") || request.getEmail().endsWith("@student.oauife.edu.ng")){
+                throw new IllegalArgumentException("Lecturer email must be a valid staff email ending with @oauife.edu.ng");
+            }
+            // Lecturers do not use matric numbers, so ensure it's null or clear
+            request.setMatricNo(null);
+        } else {
+            throw new IllegalArgumentException("Invalid user role specified.");
+        }
 
         User user = new User();
         user.setFullName(request.getFullName());
@@ -52,7 +64,6 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(request.getRole());
         user.setFacialEmbedding(request.getFacialEmbedding());
-
 
         user.setEmailVerified(false);
         String verificationToken = String.format("%06d", new java.security.SecureRandom().nextInt(900000) + 100000);
