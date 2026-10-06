@@ -2,6 +2,8 @@
 
 Spring Boot 4.1 / Java 17+ API for verified accounts, roster-assigned courses, attendance sessions and PDF reports. This branch adds the frontend integration contract to the engineer's auth service. The deployed Render service may still run an older revision.
 
+The existing Render origin is `https://real-time-attendance-auth-service.onrender.com`. Its free plan may take 30 to 60 seconds to wake after inactivity; this branch must be deployed there before the public frontend can use the new routes.
+
 ## Run locally without PostgreSQL or email credentials
 
 The `local` profile uses an in-memory H2 database and prints six-digit verification codes to the API process log. Data disappears when the process stops.
