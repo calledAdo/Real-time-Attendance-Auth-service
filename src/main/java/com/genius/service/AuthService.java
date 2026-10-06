@@ -45,10 +45,10 @@ public class AuthService {
                 throw new RuntimeException("Error: Matric number already registered!");
             }
         }
-        // Lecturer Validation Logic
+
         else if(request.getRole() == Role.LECTURER){
-            if(!request.getEmail().endsWith("@oauife.edu.ng") || request.getEmail().endsWith("@student.oauife.edu.ng")){
-                throw new IllegalArgumentException("Lecturer email must be a valid staff email ending with @oauife.edu.ng");
+            if(request.getEmail().endsWith("@student.oauife.edu.ng")){
+                throw new IllegalArgumentException("Lecturer email cannot use the student domain.");
             }
             // Lecturers do not use matric numbers, so ensure it's null or clear
             request.setMatricNo(null);
