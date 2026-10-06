@@ -41,7 +41,9 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(List.of(
                 "http://localhost:5173",
                 "http://127.0.0.1:5173",
-                "https://smartattend-frontend-jade.vercel.app/"
+                "http://localhost:5178",
+                "http://127.0.0.1:5178",
+                "https://smartattend-frontend-jade.vercel.app"
         ));
 
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
@@ -60,6 +62,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/me", "/api/auth/onboard-face").authenticated()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/attendance/**").authenticated()
                         .anyRequest().authenticated()
