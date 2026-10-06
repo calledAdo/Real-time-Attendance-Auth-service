@@ -79,7 +79,7 @@ public class EmailService {
     private String buildMime(String to, String subject, String html) {
         String encodedSubject = "=?UTF-8?B?"
                 + Base64.getEncoder().encodeToString(subject.getBytes(StandardCharsets.UTF_8)) + "?=";
-        return "From: Genius App <" + senderEmail + ">\r\n"
+        return "From: Smart Attendance App <" + senderEmail + ">\r\n"
                 + "To: " + to + "\r\n"
                 + "Subject: " + encodedSubject + "\r\n"
                 + "MIME-Version: 1.0\r\n"
