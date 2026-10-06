@@ -9,4 +9,8 @@ import java.util.List;
 public interface AttendanceRepo extends JpaRepository<Attendance,Long> {
     boolean existsByMatricNoAndDate(String matricNo, LocalDate date);
     List<Attendance> findByMatricNo(String No);
+
+    boolean existsBySessionIdAndMatricNo(Long id, String matricNo);
+
+    List<Attendance> findBySessionId(Long sessionId);
 }
