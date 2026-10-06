@@ -33,7 +33,7 @@ For a regular deployment, configure `POSTGRES_URL`, `POSTGRES_USERNAME`, `POSTGR
 
 ## API contract
 
-Protected routes require `Authorization: Bearer <token>`. The service gets the acting identity from the token subject. Student email and matric number must both match a confirmed roster entry. Session codes, lecturer coordinates, rosters and attendance records are shown only to course managers.
+Protected routes require `Authorization: Bearer <token>`. The service gets the acting identity from the token subject. A student must verify email and enroll a face descriptor before accessing non-auth API routes; otherwise the API returns `403` with `EMAIL_VERIFICATION_REQUIRED` or `FACE_ENROLLMENT_REQUIRED`. `GET /api/auth/me` and `POST /api/auth/onboard-face` remain available so the student can finish setup. Lecturers do not need face enrollment. Student email and matric number must both match a confirmed roster entry. Session codes, lecturer coordinates, rosters and attendance records are shown only to course managers.
 
 | Purpose | Route |
 | --- | --- |
@@ -50,4 +50,4 @@ Each session lasts five minutes. The server enforces a 100 m geofence around the
 
 ## Verification
 
-`mvn test` runs focused attendance service tests. The local HTTP smoke test covered registration, verification, login, CSV roster, course assignment, synthetic face enrollment, start, geofence failure, successful and duplicate check-in, closure, history and PDF authorization. Real camera capture, deployed email delivery, production PostgreSQL migration and public CORS still require verification after deployment.
+`mvn test` runs focused attendance service tests, including the student enrollment gate. The local HTTP smoke test covered registration, verification, login, CSV roster, blocked student access before enrollment, course assignment after synthetic face enrollment, start, geofence failure, successful and duplicate check-in, closure, history and PDF authorization. Real camera capture, deployed email delivery, production PostgreSQL migration and public CORS still require verification after deployment.

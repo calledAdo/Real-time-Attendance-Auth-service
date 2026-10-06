@@ -14,7 +14,7 @@ student_email="student${run_id}@student.oauife.edu.ng"
 student_matric="TST/${run_id}"
 password='LocalTest123!'
 tmp_dir="$(mktemp -d)"
-trap 'rm -f "$tmp_dir/roster.csv" "$tmp_dir/report.pdf" "$tmp_dir/far.json"; rmdir "$tmp_dir"' EXIT
+trap 'rm -f "$tmp_dir/roster.csv" "$tmp_dir/report.pdf" "$tmp_dir/far.json" "$tmp_dir/gate.json"; rmdir "$tmp_dir"' EXIT
 
 post_json() {
   curl --fail-with-body -sS -X POST "$api_base$1" -H 'Content-Type: application/json' "${@:3}" --data "$2"
@@ -22,6 +22,13 @@ post_json() {
 
 auth_header() {
   printf 'Authorization: Bearer %s' "$1"
+}
+
+expect_face_gate() {
+  status="$(curl -sS -o "$tmp_dir/gate.json" -w '%{http_code}' "$api_base$1" \
+    -H "$(auth_header "$student_token")")"
+  test "$status" = 403
+  jq -e '.code == "FACE_ENROLLMENT_REQUIRED"' "$tmp_dir/gate.json" >/dev/null
 }
 
 verification_code() {
@@ -68,14 +75,22 @@ curl --fail-with-body -sS -X POST "$api_base/api/courses/$course_code/roster-upl
   -H "$(auth_header "$lecturer_token")" -F "file=@$tmp_dir/roster.csv;type=text/csv" >/dev/null
 curl --fail-with-body -sS -X POST "$api_base/api/courses/$course_code/confirm-roster" \
   -H "$(auth_header "$lecturer_token")" | jq -e '.status == "ACTIVE" and .rosterCount == 2' >/dev/null
-curl --fail-with-body -sS "$api_base/api/courses/mine" -H "$(auth_header "$student_token")" \
-  | jq -e --arg code "$course_code" 'any(.[]; .courseCode == $code and .rosterCount == 2 and (.roster | length) == 0)' >/dev/null
-curl --fail-with-body -sS "$api_base/api/courses/$course_id" -H "$(auth_header "$student_token")" \
-  | jq -e '(.roster | length) == 0' >/dev/null
+
+printf 'Checking face-enrollment gate...\n'
+expect_face_gate /api/courses/mine
+expect_face_gate /api/attendance/sessions/active
+expect_face_gate /api/attendance/sessions/history
+expect_face_gate /api/reports/sessions/1/pdf
 
 descriptor="$(node -e 'const values = Array(128).fill(0); values[0] = 1; console.log(JSON.stringify(values))')"
 post_json /api/auth/onboard-face "$(jq -n --arg embedding "$descriptor" '{facialEmbedding:$embedding}')" \
   -H "$(auth_header "$student_token")" | jq -e '.success == true' >/dev/null
+curl --fail-with-body -sS "$api_base/api/auth/me" -H "$(auth_header "$student_token")" \
+  | jq -e '.faceEnrolled == true' >/dev/null
+curl --fail-with-body -sS "$api_base/api/courses/mine" -H "$(auth_header "$student_token")" \
+  | jq -e --arg code "$course_code" 'any(.[]; .courseCode == $code and .rosterCount == 2 and (.roster | length) == 0)' >/dev/null
+curl --fail-with-body -sS "$api_base/api/courses/$course_id" -H "$(auth_header "$student_token")" \
+  | jq -e '(.roster | length) == 0' >/dev/null
 
 printf 'Starting session and checking in...\n'
 session="$(post_json /api/attendance/sessions "$(jq -n --arg code "$course_code" \
