@@ -135,4 +135,10 @@ public class AuthService {
         user.setFacialEmbedding(facialEmbeddingJson);
         userRepo.save(user);
     }
+
+    public User getUserByEmailOrUsername(String identifier) {
+        return userRepo.findByEmail(identifier)
+                .orElseGet(() -> userRepo.findByUsername(identifier)
+                        .orElseThrow(() -> new RuntimeException("User not found with email or username: " + identifier)));
+    }
 }

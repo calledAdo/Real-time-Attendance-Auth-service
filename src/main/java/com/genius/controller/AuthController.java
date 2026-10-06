@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.Map;
 
 @RestController
@@ -105,6 +106,32 @@ public class AuthController {
                     "success", false,
                     "message", e.getMessage()
             ));
+        }
+    }
+
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser(Principal principal) {
+        try {
+            if (principal == null) {
+                return ResponseEntity.status(401).body(Map.of("success", false, "message", "Unauthorized"));
+            }
+
+            // Gets the identifier (email/username) from the secure JWT token
+            String identifier = principal.getName();
+            User user = authService.getUserByEmailOrUsername(identifier);
+
+            return ResponseEntity.ok(Map.of(
+                    "id", user.getId(),
+                    "email", user.getEmail(),
+                    "username", user.getUsername(),
+                    "role", user.getRole(),
+                    "emailVerified", user.isEmailVerified(),
+                    "matricNo", user.getMatricNo() != null ? user.getMatricNo() : "",
+                    "faceEnrolled", user.getFacialEmbedding() != null && !user.getFacialEmbedding().isEmpty()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(404).body(Map.of("success", false, "message", "User not found"));
         }
     }
 }
