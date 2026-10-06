@@ -52,21 +52,6 @@ public class CourseController {
         }
     }
 
-    @PostMapping
-    public ResponseEntity<?> createCourse(@RequestBody Map<String, Object> payload) {
-        try {
-            String courseCode = (String) payload.get("courseCode");
-            String title = (String) payload.get("title");
-            String semester = (String) payload.get("semester");
-            Long lecturerId = Long.valueOf(payload.get("lecturerId").toString());
-
-            Course course = courseService.createCourse(courseCode, title, semester, lecturerId);
-            return ResponseEntity.ok(course);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
     @PostMapping("/{courseCode}/roster-upload")
     public ResponseEntity<?> uploadRoster(
             @PathVariable String courseCode,
